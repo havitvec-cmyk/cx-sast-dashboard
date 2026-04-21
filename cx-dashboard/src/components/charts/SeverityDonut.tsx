@@ -8,7 +8,12 @@ const SEV_COLORS: Record<string, string> = {
   Info:   '#3b82f6',
 };
 
-interface Props { data: SeverityBreakdown; total: number }
+interface Props {
+  data: SeverityBreakdown;
+  total: number;
+  onSliceClick?: (severity: string) => void;
+  activeSeverity?: string | null;
+}
 
 const renderLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent }: Record<string, number>) => {
   if (percent < 0.05) return null;
@@ -24,7 +29,7 @@ const renderLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent }: Re
   );
 };
 
-export default function SeverityDonut({ data, total }: Props) {
+export default function SeverityDonut({ data, total, onSliceClick, activeSeverity }: Props) {
   const entries = Object.entries(data).filter(([, v]) => v > 0);
   const chartData = entries.map(([name, value]) => ({ name, value }));
 
@@ -42,9 +47,16 @@ export default function SeverityDonut({ data, total }: Props) {
             dataKey="value"
             labelLine={false}
             label={renderLabel}
+            onClick={onSliceClick ? (entry) => onSliceClick(entry.name) : undefined}
+            style={onSliceClick ? { cursor: 'pointer' } : undefined}
           >
             {chartData.map((entry) => (
-              <Cell key={entry.name} fill={SEV_COLORS[entry.name] ?? '#6b7280'} stroke="transparent" />
+              <Cell
+                key={entry.name}
+                fill={SEV_COLORS[entry.name] ?? '#6b7280'}
+                stroke="transparent"
+                opacity={activeSeverity && activeSeverity !== entry.name ? 0.3 : 1}
+              />
             ))}
           </Pie>
           <Tooltip
@@ -59,7 +71,6 @@ export default function SeverityDonut({ data, total }: Props) {
           />
         </PieChart>
       </ResponsiveContainer>
-      {/* Center text */}
       <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none" style={{ marginBottom: 32 }}>
         <p className="text-2xl font-mono font-bold text-slate-100">{total.toLocaleString()}</p>
         <p className="text-xs text-slate-500 uppercase tracking-wider">total</p>

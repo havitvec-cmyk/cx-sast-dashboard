@@ -5,6 +5,8 @@ import Overview from './pages/Overview';
 import Projects from './pages/Projects';
 import Compliance from './pages/Compliance';
 import Trends from './pages/Trends';
+import RiskPortfolio from './pages/RiskPortfolio';
+import Remediation from './pages/Remediation';
 
 export default function App() {
   return (
@@ -12,10 +14,12 @@ export default function App() {
       <BrowserRouter>
         <Layout>
           <Routes>
-            <Route path="/"           element={<Overview />}   />
-            <Route path="/projects"   element={<Projects />}   />
-            <Route path="/compliance" element={<Compliance />} />
-            <Route path="/trends"     element={<Trends />}     />
+            <Route path="/"            element={<Overview />}      />
+            <Route path="/projects"    element={<Projects />}      />
+            <Route path="/risk"        element={<RiskPortfolio />} />
+            <Route path="/remediation" element={<Remediation />}   />
+            <Route path="/compliance"  element={<Compliance />}    />
+            <Route path="/trends"      element={<Trends />}        />
           </Routes>
         </Layout>
       </BrowserRouter>

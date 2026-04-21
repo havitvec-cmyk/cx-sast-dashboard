@@ -119,3 +119,53 @@ export const COMPLIANCE_FIELDS = [
 ] as const;
 
 export type ComplianceField = typeof COMPLIANCE_FIELDS[number];
+
+// ---------------------------------------------------------------------------
+// Global filter state
+// ---------------------------------------------------------------------------
+
+export interface FilterState {
+  severity: string | null;  // 'High' | 'Medium' | 'Low' | 'Info' | null
+  entity:   string | null;
+  project:  string | null;
+  state:    string | null;  // Result State
+}
+
+export const EMPTY_FILTER: FilterState = {
+  severity: null,
+  entity:   null,
+  project:  null,
+  state:    null,
+};
+
+export function applyFilter(rows: VulnerabilityRow[], filter: FilterState): VulnerabilityRow[] {
+  return rows.filter((r) => {
+    if (filter.severity && r['Result Severity'].toLowerCase() !== filter.severity.toLowerCase()) return false;
+    if (filter.entity   && r['Entity'] !== filter.entity)                                          return false;
+    if (filter.project  && r['Checkmarx project name'] !== filter.project)                         return false;
+    if (filter.state    && r['Result State'] !== filter.state)                                     return false;
+    return true;
+  });
+}
+
+export function filterLabel(filter: FilterState): string[] {
+  const chips: string[] = [];
+  if (filter.severity) chips.push(`Severity: ${filter.severity}`);
+  if (filter.entity)   chips.push(`Entity: ${filter.entity}`);
+  if (filter.project)  chips.push(`Project: ${filter.project}`);
+  if (filter.state)    chips.push(`State: ${filter.state}`);
+  return chips;
+}
+
+// ---------------------------------------------------------------------------
+// SLA configuration
+// ---------------------------------------------------------------------------
+
+export interface SlaConfig {
+  high:   number; // days
+  medium: number;
+  low:    number;
+  [key: string]: number;
+}
+
+export const DEFAULT_SLA: SlaConfig = { high: 90, medium: 180, low: 365 };

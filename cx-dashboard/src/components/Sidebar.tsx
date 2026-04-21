@@ -3,15 +3,18 @@ import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, Layers, Shield, TrendingUp,
   Upload, ChevronLeft, ChevronRight, ShieldAlert,
+  Flame, Wrench,
 } from 'lucide-react';
 import FileUpload from './FileUpload';
 import { useExtracts } from '../context/ExtractContext';
 
 const NAV = [
-  { to: '/',           icon: LayoutDashboard, label: 'Overview'   },
-  { to: '/projects',   icon: Layers,          label: 'Projects'   },
-  { to: '/compliance', icon: Shield,          label: 'Compliance' },
-  { to: '/trends',     icon: TrendingUp,      label: 'Trends'     },
+  { to: '/',             icon: LayoutDashboard, label: 'Overview'       },
+  { to: '/projects',     icon: Layers,          label: 'Projects'       },
+  { to: '/risk',         icon: Flame,           label: 'Risk Portfolio' },
+  { to: '/remediation',  icon: Wrench,          label: 'Remediation'    },
+  { to: '/compliance',   icon: Shield,          label: 'Compliance'     },
+  { to: '/trends',       icon: TrendingUp,      label: 'Trends'         },
 ];
 
 export default function Sidebar() {
@@ -20,11 +23,7 @@ export default function Sidebar() {
   const { extracts } = useExtracts();
 
   return (
-    <aside
-      className={`relative flex flex-col bg-cyber-surface border-r border-cyber-border transition-all duration-200 ${
-        collapsed ? 'w-16' : 'w-60'
-      }`}
-    >
+    <aside className={`relative flex flex-col bg-cyber-surface border-r border-cyber-border transition-all duration-200 ${collapsed ? 'w-16' : 'w-60'}`}>
       {/* Logo */}
       <div className="flex items-center gap-3 px-4 py-5 border-b border-cyber-border">
         <ShieldAlert size={22} className="text-cyber-cyan flex-shrink-0" />
@@ -37,7 +36,7 @@ export default function Sidebar() {
       </div>
 
       {/* Nav */}
-      <nav className="flex flex-col gap-1 p-2 flex-1">
+      <nav className="flex flex-col gap-1 p-2 flex-1 overflow-y-auto">
         {NAV.map(({ to, icon: Icon, label }) => (
           <NavLink
             key={to}
@@ -68,10 +67,7 @@ export default function Sidebar() {
         <button
           onClick={() => setShowUpload((v) => !v)}
           className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150
-            ${showUpload
-              ? 'text-cyber-cyan bg-cyber-cyan/10'
-              : 'text-slate-400 hover:text-slate-200 hover:bg-cyber-border/40'
-            }`}
+            ${showUpload ? 'text-cyber-cyan bg-cyber-cyan/10' : 'text-slate-400 hover:text-slate-200 hover:bg-cyber-border/40'}`}
           title={collapsed ? 'Upload extracts' : undefined}
         >
           <Upload size={18} className="flex-shrink-0" />
@@ -79,9 +75,7 @@ export default function Sidebar() {
             <span className="flex-1 text-left">
               Upload Extracts
               {extracts.length > 0 && (
-                <span className="ml-2 text-xs bg-cyber-cyan/20 text-cyber-cyan px-1.5 py-0.5 rounded-full">
-                  {extracts.length}
-                </span>
+                <span className="ml-2 text-xs bg-cyber-cyan/20 text-cyber-cyan px-1.5 py-0.5 rounded-full">{extracts.length}</span>
               )}
             </span>
           )}
