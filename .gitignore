@@ -16,6 +16,9 @@ cx-dashboard/.vite/
 # Output files
 vulnerability_extract_*.csv
 
+# Claude Code
+.claude/
+
 # OS
 .DS_Store
 Thumbs.db
