@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.env
+*.egg-info/
+dist/
+.venv/
+venv/
+
+# Node
+cx-dashboard/node_modules/
+cx-dashboard/dist/
+cx-dashboard/.vite/
+
+# Output files
+vulnerability_extract_*.csv
+
+# OS
+.DS_Store
+Thumbs.db

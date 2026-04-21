@@ -1,0 +1,77 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  *, *::before, *::after { box-sizing: border-box; }
+
+  html, body, #root {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    background-color: #050d1a;
+    color: #e2e8f0;
+    font-family: 'Inter', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: #0a1628; }
+  ::-webkit-scrollbar-thumb { background: #1a3a5c; border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: #22d3ee44; }
+}
+
+@layer components {
+  .cyber-card {
+    @apply bg-cyber-card border border-cyber-border rounded-xl;
+    background-image: linear-gradient(135deg, rgba(34,211,238,0.03) 0%, transparent 60%);
+  }
+
+  .cyber-card-glow {
+    @apply cyber-card shadow-glow-sm;
+    border-color: rgba(34, 211, 238, 0.3);
+  }
+
+  .cyber-badge {
+    @apply text-xs font-mono px-2 py-0.5 rounded border;
+  }
+
+  .nav-item {
+    @apply flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium
+           text-slate-400 hover:text-cyber-cyan hover:bg-cyber-border/40
+           transition-all duration-150 cursor-pointer;
+  }
+
+  .nav-item-active {
+    @apply nav-item text-cyber-cyan bg-cyber-border/40;
+    box-shadow: inset 3px 0 0 #22d3ee;
+  }
+
+  .stat-value {
+    @apply font-mono text-3xl font-semibold tracking-tight;
+  }
+
+  .grid-bg {
+    background-image:
+      linear-gradient(rgba(34,211,238,0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(34,211,238,0.04) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+}
+
+/* Recharts custom */
+.recharts-tooltip-wrapper .recharts-default-tooltip {
+  background: #0f1f3d !important;
+  border: 1px solid #1a3a5c !important;
+  border-radius: 8px !important;
+  font-family: 'JetBrains Mono', monospace !important;
+  font-size: 12px !important;
+}
+
+.recharts-cartesian-grid-horizontal line,
+.recharts-cartesian-grid-vertical line {
+  stroke: rgba(34, 211, 238, 0.06) !important;
+}
