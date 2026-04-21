@@ -1,17 +1,27 @@
-# Checkmarx SAST Vulnerability Extractor
+# Checkmarx SAST Security Toolkit
+
+End-to-end toolchain for extracting and visualising SAST vulnerabilities from a Checkmarx on-premise instance.
+
+| Component | Description |
+|---|---|
+| `cx_extract.py` | Python CLI/pipeline script — pulls vulnerabilities from the CX REST API and writes a timestamped CSV |
+| `cx-dashboard/` | React + TypeScript SPA — loads the CSV extracts and displays interactive KPI/KRI dashboards with trend comparison |
+
+---
+
+## Part 1 — Extractor (`cx_extract.py`)
 
 Extracts all SAST vulnerabilities from a Checkmarx on-premise instance into a timestamped CSV file, combining per-project metadata from an Excel file with scan results from the REST API.
 
-## Requirements
+### Requirements
 
 - Python 3.10+
-- Dependencies:
 
 ```bash
 pip install requests openpyxl
 ```
 
-## Usage
+### Usage
 
 ```bash
 python cx_extract.py \
@@ -24,7 +34,7 @@ python cx_extract.py \
   [--verbose]
 ```
 
-### Arguments
+#### Arguments
 
 | Argument | Required | Description |
 |---|---|---|
@@ -36,7 +46,7 @@ python cx_extract.py \
 | `--no-verify-ssl` | No | Disable SSL certificate verification (useful for self-signed certificates) |
 | `--verbose` | No | Enable debug-level logging |
 
-### Examples
+#### Examples
 
 Basic run:
 ```bash
@@ -54,7 +64,7 @@ python cx_extract.py \
   --no-verify-ssl
 ```
 
-## Input: Excel File
+### Input: Excel File
 
 The Excel file must contain a single sheet with at least the following columns (column order does not matter):
 
@@ -73,11 +83,11 @@ The Excel file must contain a single sheet with at least the following columns (
 | `LSO` | Local security officer |
 | `RSO` | Regional security officer |
 
-## Output: CSV File
+### Output: CSV File
 
 The script writes `vulnerability_extract_<YYYYMMDD_HHMMSS>.csv` to the output directory. Each row represents one vulnerability. The file is UTF-8 encoded with BOM for Excel compatibility.
 
-### Columns
+#### Columns
 
 | Source | Columns |
 |---|---|
@@ -88,7 +98,7 @@ The script writes `vulnerability_extract_<YYYYMMDD_HHMMSS>.csv` to the output di
 | Sink node | `DestFileName`, `DestLine`, `DestColumn`, `DestNodeId`, `DestName` |
 | Result metadata | `Result State`, `Result Severity`, `Assigned To`, `Comment`, `Link`, `Result Status`, `Detection Date` |
 
-## How It Works
+### How It Works
 
 1. **Authentication** — POSTs credentials to `/cxrestapi/auth/identity/connect/token` and attaches the returned Bearer token to all subsequent requests.
 2. **Project metadata** — Reads the Excel file to build a dictionary of project-level attributes keyed by `CX Project ID`.
@@ -96,14 +106,60 @@ The script writes `vulnerability_extract_<YYYYMMDD_HHMMSS>.csv` to the output di
 4. **Vulnerability extraction** — Paginates through `GET /cxrestapi/sast/results?scanId={id}&offset=0&limit=500` to collect all vulnerabilities for each scan.
 5. **CSV output** — Merges project metadata with scan results and writes the combined rows to the output CSV.
 
-## Retry Behaviour
+### Retry Behaviour
 
 Every API call is retried up to 3 times on network errors or HTTP 429/5xx responses, with exponential backoff (2 s → 4 s → 8 s). Non-retryable HTTP errors (4xx) fail immediately.
 
-## Exit Codes
+### Exit Codes
 
 | Code | Meaning |
 |---|---|
 | `0` | Success |
 | `1` | Fatal error (authentication failure, missing Excel columns, unrecoverable API error, etc.) |
 | `130` | Interrupted by user (Ctrl+C) |
+
+---
+
+## Part 2 — Analytics Dashboard (`cx-dashboard/`)
+
+A browser-based analytics SPA that loads one or more `vulnerability_extract_*.csv` files and displays interactive KPI/KRI visualisations with a modern cybersecurity dark theme — no backend required.
+
+### Requirements
+
+- Node.js 18+
+
+```bash
+cd cx-dashboard
+npm install
+npm run dev      # development server → http://localhost:5173
+npm run build    # production build → dist/
+```
+
+### Pages
+
+| Page | Content |
+|---|---|
+| **Overview** | KPI cards (total, severity breakdown, internet-facing exposure, assignment rate) + severity donut + result state pie + top 10 vulnerability types + DORA risk matrix |
+| **Projects** | Horizontal bar of top 15 projects by vulnerability count + searchable per-project table with High / Medium / Low / Info breakdown |
+| **Compliance** | KPI cards (active frameworks, high-coverage count, average coverage) + framework coverage bar chart + detail table with inline progress bars |
+| **Trends** | Line chart of any severity metric over time + stacked severity bar per extract + extract comparison table with delta (Δ) column |
+
+### Loading Data
+
+1. Click **Upload Extracts** in the sidebar (or drag-and-drop CSV files onto the drop zone).
+2. Load as many `vulnerability_extract_*.csv` files as needed — each is assigned a distinct colour.
+3. Switch the active extract using the coloured dots in the top bar; the Trends page always shows all loaded extracts together for comparison.
+
+The dashboard auto-parses the timestamp from the filename (`vulnerability_extract_YYYYMMDD_HHMMSS.csv`) so extracts are sorted chronologically on the Trends page.
+
+### Tech Stack
+
+| Layer | Library |
+|---|---|
+| Framework | React 18 + TypeScript |
+| Build | Vite |
+| Styling | Tailwind CSS (custom dark cybersecurity theme) |
+| Charts | Recharts |
+| CSV parsing | PapaParse |
+| Routing | React Router v6 |
+| Icons | Lucide React |
