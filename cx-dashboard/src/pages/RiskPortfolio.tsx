@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Flame, ShieldAlert, Globe, Target } from 'lucide-react';
+import { Flame, ShieldAlert, Globe, Target, Download } from 'lucide-react';
 import { useExtracts, useActiveExtract } from '../context/ExtractContext';
 import { computeRiskScores, computeEntityRollup, riskColor } from '../utils/metrics';
 import KPICard from '../components/KPICard';
@@ -8,6 +8,7 @@ import EmptyState from '../components/EmptyState';
 import EntityRollupChart from '../components/charts/EntityRollupChart';
 import { doraColor, severityColor } from '../utils/metrics';
 import type { ProjectRiskScore } from '../utils/metrics';
+import Papa from 'papaparse';
 
 function RiskTile({ p, maxScore }: { p: ProjectRiskScore; maxScore: number }) {
   const color = riskColor(p.score, maxScore);
@@ -104,7 +105,24 @@ export default function RiskPortfolio() {
 
       {/* Ranked table */}
       <div className="cyber-card p-5 flex flex-col gap-4">
-        <h3 className="text-sm font-semibold text-slate-200 uppercase tracking-wider">Risk Ranking Table</h3>
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-slate-200 uppercase tracking-wider">Risk Ranking Table</h3>
+          <button
+            onClick={() => {
+              const rows = scores.map((p, i) => ({
+                Rank: i + 1, Project: p.projectName, Entity: p.entity, DORA: p.dora,
+                'Internet Facing': p.internetFacing ? 'Yes' : 'No',
+                High: p.high, Medium: p.medium, Low: p.low, Score: p.score,
+              }));
+              const a = document.createElement('a');
+              a.href = URL.createObjectURL(new Blob([Papa.unparse(rows)], { type: 'text/csv;charset=utf-8;' }));
+              a.download = 'risk_ranking.csv'; a.click();
+            }}
+            className="flex items-center gap-1.5 text-xs text-cyber-cyan hover:text-white border border-cyber-cyan/30 hover:border-cyber-cyan px-3 py-1.5 rounded-lg transition-all font-mono"
+          >
+            <Download size={13} /> Export CSV
+          </button>
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full text-xs font-mono">
             <thead>

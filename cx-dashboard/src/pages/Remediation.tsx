@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react';
-import { Clock, AlertOctagon, Calendar, Settings } from 'lucide-react';
+import { Clock, AlertOctagon, Calendar, Settings, Download } from 'lucide-react';
 import { useActiveExtract, useExtracts } from '../context/ExtractContext';
-import { computeAging, computeQueryHealth } from '../utils/metrics';
+import { computeAging, computeQueryHealth, FP_EQUIVALENT_STATES } from '../utils/metrics';
 import type { QueryHealth } from '../utils/metrics';
+import Papa from 'papaparse';
 import KPICard from '../components/KPICard';
 import ChartCard from '../components/ChartCard';
 import EmptyState from '../components/EmptyState';
@@ -27,6 +28,55 @@ function AssigneeChart({ rows }: { rows: { assignee: string; high: number; mediu
           <Bar dataKey="Low"    stackId="a" fill="#facc15" radius={[0, 4, 4, 0]} />
         </BarChart>
       </ResponsiveContainer>
+    </div>
+  );
+}
+
+function OldestVulnsTable({ rows }: { rows: import('../types').VulnerabilityRow[] }) {
+  const openStates = new Set(['new', 'recurrent', 'confirmed', 'urgent']);
+  const oldest = rows
+    .filter((r) => openStates.has((r['Result State'] || '').toLowerCase()) && r['Detection Date'])
+    .map((r) => {
+      const age = Math.floor((Date.now() - new Date(r['Detection Date']).getTime()) / 86_400_000);
+      return { row: r, age };
+    })
+    .filter((e) => !isNaN(e.age))
+    .sort((a, b) => b.age - a.age)
+    .slice(0, 20);
+
+  if (oldest.length === 0) return <p className="text-center text-slate-600 text-sm py-8">No dated open vulnerabilities</p>;
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-xs font-mono">
+        <thead>
+          <tr className="text-slate-500 uppercase tracking-wider text-left border-b border-cyber-border">
+            <th className="pb-2 pr-4 font-medium">Project</th>
+            <th className="pb-2 pr-4 font-medium">Query</th>
+            <th className="pb-2 pr-4 font-medium">Severity</th>
+            <th className="pb-2 pr-4 font-medium">State</th>
+            <th className="pb-2 pr-4 font-medium text-red-400">Age (d)</th>
+            <th className="pb-2 font-medium">Assigned To</th>
+          </tr>
+        </thead>
+        <tbody>
+          {oldest.map(({ row, age }, i) => {
+            const sevColor = row['Result Severity']?.toLowerCase() === 'high' ? '#ef4444'
+              : row['Result Severity']?.toLowerCase() === 'medium' ? '#f97316'
+              : row['Result Severity']?.toLowerCase() === 'low' ? '#facc15' : '#94a3b8';
+            return (
+              <tr key={i} className="border-b border-cyber-border/50 hover:bg-cyber-border/20">
+                <td className="py-2 pr-4 text-slate-300 max-w-[180px] truncate" title={row['Checkmarx project name']}>{row['Checkmarx project name'] || '—'}</td>
+                <td className="py-2 pr-4 text-slate-400 max-w-[180px] truncate" title={row['Query']}>{row['Query'] || '—'}</td>
+                <td className="py-2 pr-4 font-semibold" style={{ color: sevColor }}>{row['Result Severity'] || '—'}</td>
+                <td className="py-2 pr-4 text-slate-500">{row['Result State'] || '—'}</td>
+                <td className="py-2 pr-4 text-red-400 font-bold">{age}</td>
+                <td className="py-2 text-slate-400">{row['Assigned To'] || 'Unassigned'}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -75,6 +125,23 @@ function QueryHealthTable({ data }: { data: QueryHealth[] }) {
   );
 }
 
+function computeWorkload(rows: import('../types').VulnerabilityRow[], field: 'Assigned To' | 'AGO SME') {
+  const map = new Map<string, { high: number; medium: number; low: number; total: number }>();
+  for (const row of rows) {
+    const key = (row[field] || 'Unassigned').trim() || 'Unassigned';
+    if (!map.has(key)) map.set(key, { high: 0, medium: 0, low: 0, total: 0 });
+    const e = map.get(key)!;
+    const sev = (row['Result Severity'] || '').toLowerCase();
+    if (sev === 'high') e.high++;
+    else if (sev === 'medium') e.medium++;
+    else if (sev === 'low') e.low++;
+    e.total++;
+  }
+  return Array.from(map.entries())
+    .map(([assignee, v]) => ({ assignee, ...v }))
+    .sort((a, b) => b.total - a.total);
+}
+
 function SlaEditor({ config, onChange }: { config: SlaConfig; onChange: (c: SlaConfig) => void }) {
   return (
     <div className="flex flex-wrap items-center gap-4 text-xs font-mono">
@@ -111,21 +178,28 @@ export default function Remediation() {
 
   const assigneeData = useMemo(() => {
     if (!extract) return [];
-    const map = new Map<string, { high: number; medium: number; low: number; total: number }>();
-    for (const row of extract.rows) {
-      const assignee = (row['Assigned To'] || 'Unassigned').trim() || 'Unassigned';
-      if (!map.has(assignee)) map.set(assignee, { high: 0, medium: 0, low: 0, total: 0 });
-      const e = map.get(assignee)!;
-      const sev = (row['Result Severity'] || '').toLowerCase();
-      if (sev === 'high') e.high++;
-      else if (sev === 'medium') e.medium++;
-      else if (sev === 'low') e.low++;
-      e.total++;
-    }
-    return Array.from(map.entries())
-      .map(([assignee, v]) => ({ assignee, ...v }))
-      .sort((a, b) => b.total - a.total);
+    return computeWorkload(extract.rows, 'Assigned To');
   }, [extract]);
+
+  const agoSmeData = useMemo(() => {
+    if (!extract) return [];
+    return computeWorkload(extract.rows, 'AGO SME');
+  }, [extract]);
+
+  const suppressedCount = useMemo(
+    () => extract ? extract.rows.filter((r) => FP_EQUIVALENT_STATES.has((r['Result State'] || '').toLowerCase())).length : 0,
+    [extract],
+  );
+
+  const exportQueryHealth = () => {
+    const csv = Papa.unparse(queryHealth.map((q) => ({
+      Query: q.query, Total: q.total, Recurrent: q.recurrent,
+      'Suppressed/FP': q.falsePositive, 'FP %': q.fpRate, 'Recurrence %': q.recurrenceRate,
+    })));
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
+    a.download = 'query_health.csv'; a.click();
+  };
 
   if (!extract || !aging) return <EmptyState />;
 
@@ -166,9 +240,24 @@ export default function Remediation() {
           <AgeHistogram buckets={aging.buckets} />
         </ChartCard>
 
-        <ChartCard title="Assignee Workload" subtitle="Open vulnerabilities per owner">
+        <ChartCard title="Assignee Workload" subtitle="Open vulnerabilities per owner (Assigned To)">
           <AssigneeChart rows={assigneeData} />
         </ChartCard>
+      </div>
+
+      {/* AGO SME workload */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <ChartCard title="AGO SME Workload" subtitle="Vulnerability count per AGO SME, by severity">
+          <AssigneeChart rows={agoSmeData} />
+        </ChartCard>
+        <div className="cyber-card p-5 flex flex-col gap-3">
+          <h3 className="text-sm font-semibold text-slate-200 uppercase tracking-wider">Suppression Summary</h3>
+          <p className="text-xs text-slate-500 font-mono">Vulnerabilities suppressed via False Positive, Not Exploitable, or Propose Not Exploitable states</p>
+          <div className="flex-1 flex items-center justify-center">
+            <p className="text-6xl font-mono font-bold text-blue-400">{suppressedCount.toLocaleString()}</p>
+          </div>
+          <p className="text-xs text-slate-600 font-mono text-center">total suppressed findings</p>
+        </div>
       </div>
 
       {/* SLA breach heatmap table */}
@@ -194,8 +283,22 @@ export default function Remediation() {
         </div>
       </div>
 
+      {/* Oldest vulnerabilities */}
+      <div className="cyber-card p-5 flex flex-col gap-4">
+        <h3 className="text-sm font-semibold text-slate-200 uppercase tracking-wider">Top 20 Oldest Open Vulnerabilities</h3>
+        <OldestVulnsTable rows={extract.rows} />
+      </div>
+
       {/* Query health */}
-      <ChartCard title="Query Health — False Positive &amp; Recurrence Rates" subtitle="Click column headers to sort">
+      <ChartCard
+        title="Query Health — False Positive &amp; Recurrence Rates"
+        subtitle="Click column headers to sort · FP includes NE / Propose NE"
+        actions={
+          <button onClick={exportQueryHealth} className="flex items-center gap-1.5 text-xs text-cyber-cyan hover:text-white border border-cyber-cyan/30 hover:border-cyber-cyan px-3 py-1.5 rounded-lg transition-all font-mono">
+            <Download size={13} /> Export CSV
+          </button>
+        }
+      >
         <QueryHealthTable data={queryHealth} />
       </ChartCard>
     </div>

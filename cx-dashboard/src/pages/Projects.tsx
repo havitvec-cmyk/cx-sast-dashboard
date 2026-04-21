@@ -7,6 +7,7 @@ import EmptyState from '../components/EmptyState';
 import VulnsByProject from '../components/charts/VulnsByProject';
 import FileHotspot from '../components/charts/FileHotspot';
 import Papa from 'papaparse';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
 export default function Projects() {
   const extract           = useActiveExtract();
@@ -67,6 +68,21 @@ export default function Projects() {
 
   const maxScore = scores[0]?.score ?? 1;
 
+  // New vs Recurrent per project (top 10 by total)
+  const newVsRecurrentData = useMemo(() => {
+    const map: Record<string, { name: string; New: number; Recurrent: number }> = {};
+    for (const row of rows) {
+      const key = row['Checkmarx project name'] || row['CX Project ID'] || 'Unknown';
+      if (!map[key]) map[key] = { name: key.length > 20 ? key.slice(0, 18) + '…' : key, New: 0, Recurrent: 0 };
+      const state = (row['Result State'] || '').toLowerCase();
+      if (state === 'new') map[key].New++;
+      else if (state === 'recurrent') map[key].Recurrent++;
+    }
+    return Object.values(map)
+      .sort((a, b) => (b.New + b.Recurrent) - (a.New + a.Recurrent))
+      .slice(0, 10);
+  }, [rows]);
+
   const filtered = projectData.filter((p) =>
     !search || p.name.toLowerCase().includes(search.toLowerCase()) || p.entity.toLowerCase().includes(search.toLowerCase())
   );
@@ -95,6 +111,22 @@ export default function Projects() {
           <FileHotspot data={hotspots} />
         </ChartCard>
       </div>
+
+      {/* New vs Recurrent per project */}
+      <ChartCard title="New vs Recurrent Vulnerabilities" subtitle="Top 10 projects — active findings by lifecycle state">
+        <div className="h-72">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={newVsRecurrentData} margin={{ left: 8, right: 16, top: 8, bottom: 8 }}>
+              <XAxis dataKey="name" tick={{ fill: '#64748b', fontSize: 10, fontFamily: 'JetBrains Mono, monospace' }} tickLine={false} axisLine={{ stroke: '#1a3a5c' }} />
+              <YAxis tick={{ fill: '#64748b', fontSize: 10, fontFamily: 'JetBrains Mono, monospace' }} tickLine={false} axisLine={false} />
+              <Tooltip contentStyle={{ background: '#0f1f3d', border: '1px solid #1a3a5c', borderRadius: 8, fontFamily: 'JetBrains Mono, monospace', fontSize: 12 }} itemStyle={{ color: '#e2e8f0' }} formatter={(v: number) => v.toLocaleString()} />
+              <Legend iconType="circle" iconSize={8} formatter={(v) => <span style={{ color: '#94a3b8', fontSize: 11, fontFamily: 'JetBrains Mono, monospace' }}>{v}</span>} />
+              <Bar dataKey="New"       fill="#ef4444" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="Recurrent" fill="#f97316" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </ChartCard>
 
       {/* Project table */}
       <div className="cyber-card p-5 flex flex-col gap-4">

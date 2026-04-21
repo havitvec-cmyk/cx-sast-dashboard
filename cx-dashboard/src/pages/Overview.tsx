@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { Bug, ShieldAlert, AlertTriangle, Info, Globe, UserCheck, Flame, Clock } from 'lucide-react';
 import { useExtracts, useActiveExtract } from '../context/ExtractContext';
-import { computeMetrics, computeRiskScores, computeAging, computeLanguageBreakdown, pct, riskColor } from '../utils/metrics';
+import { computeMetrics, computeRiskScores, computeAging, computeLanguageBreakdown, pct, riskColor, FP_EQUIVALENT_STATES } from '../utils/metrics';
 import KPICard from '../components/KPICard';
 import ChartCard from '../components/ChartCard';
 import EmptyState from '../components/EmptyState';
@@ -25,6 +25,7 @@ export default function Overview() {
 
   const newVulns   = metrics.byState['New']       ?? 0;
   const recurrent  = metrics.byState['Recurrent'] ?? 0;
+  const suppressed = rows.filter((r) => FP_EQUIVALENT_STATES.has((r['Result State'] || '').toLowerCase())).length;
   const maxScore   = scores[0]?.score ?? 1;
   const criticalRisk = scores.filter((p) => riskColor(p.score, maxScore) === '#ef4444').length;
   const slaBreach  = aging.slaBreach.high + aging.slaBreach.medium + aging.slaBreach.low;
@@ -92,12 +93,12 @@ export default function Overview() {
           <h3 className="text-sm font-semibold text-slate-200 uppercase tracking-wider">Quick Stats</h3>
           <div className="grid grid-cols-2 gap-3 text-xs font-mono">
             {[
-              { label: 'Assigned',          value: metrics.assignedVsUnassigned.assigned,  color: '#22d3ee' },
-              { label: 'Internal',          value: metrics.internetFacing.no,               color: '#34d399' },
-              { label: 'False Positive',    value: metrics.byState['False Positive'] ?? 0,  color: '#3b82f6' },
-              { label: 'Not Exploitable',   value: metrics.byState['Not Exploitable'] ?? 0, color: '#a78bfa' },
-              { label: 'Avg Age (days)',     value: aging.avgAgeDays,                        color: '#f97316' },
-              { label: 'Oldest (days)',      value: aging.maxAgeDays,                        color: '#ef4444' },
+              { label: 'Assigned',           value: metrics.assignedVsUnassigned.assigned, color: '#22d3ee' },
+              { label: 'Internal',           value: metrics.internetFacing.no,              color: '#34d399' },
+              { label: 'Suppressed / FP',    value: suppressed,                             color: '#3b82f6' },
+              { label: 'New + Recurrent',    value: newVulns + recurrent,                   color: '#f87171' },
+              { label: 'Avg Age (days)',      value: aging.avgAgeDays,                       color: '#f97316' },
+              { label: 'Oldest (days)',       value: aging.maxAgeDays,                       color: '#ef4444' },
             ].map(({ label, value, color }) => (
               <div key={label} className="bg-cyber-surface border border-cyber-border rounded-lg p-3">
                 <p className="text-slate-500 text-[10px] uppercase tracking-wider">{label}</p>

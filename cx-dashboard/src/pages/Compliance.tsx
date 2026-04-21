@@ -6,7 +6,8 @@ import KPICard from '../components/KPICard';
 import ComplianceCoverage from '../components/charts/ComplianceCoverage';
 import EmptyState from '../components/EmptyState';
 import { COMPLIANCE_FIELDS } from '../types';
-import { Shield, ShieldCheck, ShieldAlert } from 'lucide-react';
+import { Shield, ShieldCheck, ShieldAlert, Download } from 'lucide-react';
+import Papa from 'papaparse';
 
 export default function Compliance() {
   const extract = useActiveExtract();
@@ -65,7 +66,19 @@ export default function Compliance() {
 
       {/* Detail table */}
       <div className="cyber-card p-5">
-        <h3 className="text-sm font-semibold text-slate-200 uppercase tracking-wider mb-4">Framework Detail</h3>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-sm font-semibold text-slate-200 uppercase tracking-wider">Framework Detail</h3>
+          <button
+            onClick={() => {
+              const a = document.createElement('a');
+              a.href = URL.createObjectURL(new Blob([Papa.unparse(tableData.map((r) => ({ Framework: r.name, 'Vulns Mapped': r.count, 'Coverage %': r.pct })))], { type: 'text/csv;charset=utf-8;' }));
+              a.download = 'compliance_coverage.csv'; a.click();
+            }}
+            className="flex items-center gap-1.5 text-xs text-cyber-cyan hover:text-white border border-cyber-cyan/30 hover:border-cyber-cyan px-3 py-1.5 rounded-lg transition-all font-mono"
+          >
+            <Download size={13} /> Export CSV
+          </button>
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full text-xs font-mono">
             <thead>

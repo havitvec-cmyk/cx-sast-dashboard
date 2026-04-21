@@ -1,21 +1,23 @@
 import { useState, useMemo } from 'react';
-import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
+import { TrendingUp, TrendingDown, Minus, Download } from 'lucide-react';
 import { useExtracts } from '../context/ExtractContext';
 import { computeMetrics } from '../utils/metrics';
 import { formatTimestamp } from '../utils/csvParser';
 import ChartCard from '../components/ChartCard';
 import TrendComparison from '../components/charts/TrendComparison';
+import type { MetricKey } from '../components/charts/TrendComparison';
 import SeverityTrendStack from '../components/charts/SeverityTrendStack';
 import FileUpload from '../components/FileUpload';
-
-type MetricKey = 'total' | 'High' | 'Medium' | 'Low' | 'Info';
+import Papa from 'papaparse';
 
 const METRIC_OPTIONS: { key: MetricKey; label: string; color: string }[] = [
-  { key: 'total',  label: 'Total',  color: '#22d3ee' },
-  { key: 'High',   label: 'High',   color: '#ef4444' },
-  { key: 'Medium', label: 'Medium', color: '#f97316' },
-  { key: 'Low',    label: 'Low',    color: '#facc15' },
-  { key: 'Info',   label: 'Info',   color: '#3b82f6' },
+  { key: 'total',     label: 'Total',     color: '#22d3ee' },
+  { key: 'High',      label: 'High',      color: '#ef4444' },
+  { key: 'Medium',    label: 'Medium',    color: '#f97316' },
+  { key: 'Low',       label: 'Low',       color: '#facc15' },
+  { key: 'Info',      label: 'Info',      color: '#3b82f6' },
+  { key: 'New',       label: 'New',       color: '#a78bfa' },
+  { key: 'Recurrent', label: 'Recurrent', color: '#fb923c' },
 ];
 
 export default function Trends() {
@@ -27,15 +29,38 @@ export default function Trends() {
     [extracts],
   );
 
+  const getMetricValue = (m: ReturnType<typeof computeMetrics>, key: MetricKey): number => {
+    if (key === 'total') return m.total;
+    if (key === 'New' || key === 'Recurrent') return m.byState[key] ?? 0;
+    return m.bySeverity[key as 'High' | 'Medium' | 'Low' | 'Info'];
+  };
+
   const summaryRows = useMemo(() =>
     sorted.map((ext, i) => {
       const m = computeMetrics(ext.rows);
       const prev = i > 0 ? computeMetrics(sorted[i - 1].rows) : null;
-      const getValue = (key: MetricKey) => key === 'total' ? m.total : m.bySeverity[key];
-      const getPrev  = (key: MetricKey) => prev ? (key === 'total' ? prev.total : prev.bySeverity[key]) : null;
+      const getValue = (key: MetricKey) => getMetricValue(m, key);
+      const getPrev  = (key: MetricKey) => prev ? getMetricValue(prev, key) : null;
       return { ext, m, getValue, getPrev };
     }),
   [sorted]);
+
+  const exportComparison = () => {
+    const rows = summaryRows.map(({ ext, m }) => ({
+      Extract: ext.name,
+      Timestamp: formatTimestamp(ext.timestamp),
+      Total: m.total,
+      High: m.bySeverity.High,
+      Medium: m.bySeverity.Medium,
+      Low: m.bySeverity.Low,
+      Info: m.bySeverity.Info,
+      New: m.byState['New'] ?? 0,
+      Recurrent: m.byState['Recurrent'] ?? 0,
+    }));
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([Papa.unparse(rows)], { type: 'text/csv;charset=utf-8;' }));
+    a.download = 'trends_comparison.csv'; a.click();
+  };
 
   if (extracts.length === 0) {
     return (
@@ -83,7 +108,12 @@ export default function Trends() {
 
       {/* Extract summary table */}
       <div className="cyber-card p-5">
-        <h3 className="text-sm font-semibold text-slate-200 uppercase tracking-wider mb-4">Extract Comparison Table</h3>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-sm font-semibold text-slate-200 uppercase tracking-wider">Extract Comparison Table</h3>
+          <button onClick={exportComparison} className="flex items-center gap-1.5 text-xs text-cyber-cyan hover:text-white border border-cyber-cyan/30 hover:border-cyber-cyan px-3 py-1.5 rounded-lg transition-all font-mono">
+            <Download size={13} /> Export CSV
+          </button>
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full text-xs font-mono">
             <thead>

@@ -6,7 +6,7 @@ import type { Extract } from '../../types';
 import { computeMetrics } from '../../utils/metrics';
 import { formatTimestamp } from '../../utils/csvParser';
 
-type MetricKey = 'total' | 'High' | 'Medium' | 'Low' | 'Info';
+export type MetricKey = 'total' | 'High' | 'Medium' | 'Low' | 'Info' | 'New' | 'Recurrent';
 
 interface Props {
   extracts: Extract[];
@@ -16,15 +16,18 @@ interface Props {
 function getValue(ext: Extract, metric: MetricKey): number {
   const m = computeMetrics(ext.rows);
   if (metric === 'total') return m.total;
+  if (metric === 'New' || metric === 'Recurrent') return m.byState[metric] ?? 0;
   return m.bySeverity[metric];
 }
 
 const METRIC_LABELS: Record<MetricKey, string> = {
-  total:  'Total',
-  High:   'High',
-  Medium: 'Medium',
-  Low:    'Low',
-  Info:   'Info',
+  total:     'Total',
+  High:      'High',
+  Medium:    'Medium',
+  Low:       'Low',
+  Info:      'Info',
+  New:       'New',
+  Recurrent: 'Recurrent',
 };
 
 export default function TrendComparison({ extracts, metric }: Props) {

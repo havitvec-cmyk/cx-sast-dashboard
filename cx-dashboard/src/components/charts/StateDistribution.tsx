@@ -1,13 +1,15 @@
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
+// NE / PNE are suppressed/FP equivalents — use same blue family as False Positive
 const STATE_COLORS: Record<string, string> = {
-  'New':              '#ef4444',
-  'Recurrent':        '#f97316',
-  'Not Exploitable':  '#34d399',
-  'False Positive':   '#3b82f6',
-  'Confirmed':        '#a78bfa',
-  'Urgent':           '#dc2626',
-  'Propose Not Exploitable': '#6b7280',
+  'New':                     '#ef4444',
+  'Recurrent':               '#f97316',
+  'Confirmed':               '#a78bfa',
+  'Urgent':                  '#dc2626',
+  'False Positive':          '#3b82f6',
+  'Not Exploitable':         '#60a5fa',
+  'Propose Not Exploitable': '#93c5fd',
+  'Proposed Not Exploitable':'#bfdbfe',
 };
 
 function colorForState(state: string): string {

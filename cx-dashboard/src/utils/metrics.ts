@@ -254,6 +254,14 @@ export function computeLanguageBreakdown(rows: VulnerabilityRow[]): [string, num
 // Query health (FP + recurrence rates)
 // ---------------------------------------------------------------------------
 
+// "Not Exploitable" and its variants are treated as suppressed/false-positive
+export const FP_EQUIVALENT_STATES = new Set([
+  'false positive',
+  'not exploitable',
+  'propose not exploitable',
+  'proposed not exploitable',
+]);
+
 export interface QueryHealth {
   query: string;
   total: number;
@@ -273,7 +281,7 @@ export function computeQueryHealth(rows: VulnerabilityRow[]): QueryHealth[] {
     entry.total++;
     const state = (row['Result State'] || '').toLowerCase();
     if (state === 'recurrent') entry.recurrent++;
-    if (state === 'false positive') entry.fp++;
+    if (FP_EQUIVALENT_STATES.has(state)) entry.fp++;
   }
 
   return Array.from(map.entries())
