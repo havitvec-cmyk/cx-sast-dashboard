@@ -25,6 +25,10 @@ cx_state.json
 *.xlsx
 *.xls
 
+# Internal / meta files
+context.md
+CLAUDE.md
+
 # Claude Code
 .claude/
 
