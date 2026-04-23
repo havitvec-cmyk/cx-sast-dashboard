@@ -15,6 +15,15 @@ cx-dashboard/.vite/
 
 # Output files
 vulnerability_extract_*.csv
+scan_coverage_*.csv
+reports/
+
+# Incremental state
+cx_state.json
+
+# Project metadata (may contain sensitive business data)
+*.xlsx
+*.xls
 
 # Claude Code
 .claude/
