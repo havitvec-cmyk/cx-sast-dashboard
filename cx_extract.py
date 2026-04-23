@@ -2,7 +2,7 @@
 """
 Checkmarx SAST Vulnerability Extractor
 Extracts vulnerabilities from all projects in a Checkmarx SAST on-premise instance
-into a timestamped CSV file.
+into a timestamped CSV file using the report generation API.
 
 Usage:
     python cx_extract.py --url https://cx.company.com --username admin --password secret \
@@ -11,8 +11,10 @@ Usage:
 
 import argparse
 import csv
+import io
 import json
 import logging
+import re
 import sys
 import threading
 import time
@@ -66,12 +68,13 @@ COVERAGE_COLUMNS = [
 
 AUTH_ENDPOINT    = "/cxrestapi/auth/identity/connect/token"
 SCANS_ENDPOINT   = "/cxrestapi/sast/scans"
-RESULTS_ENDPOINT = "/cxrestapi/sast/results"
+REPORTS_ENDPOINT = "/cxrestapi/reports/sastScan"
 STATE_FILE_NAME  = "cx_state.json"
 
-PAGE_SIZE       = 500
-MAX_RETRIES     = 3
-RETRY_BASE_WAIT = 2.0  # seconds; doubles each attempt
+MAX_RETRIES          = 3
+RETRY_BASE_WAIT      = 2.0   # seconds; doubles each attempt
+REPORT_POLL_INTERVAL = 10    # seconds between status checks
+REPORT_TIMEOUT       = 180   # seconds before giving up on a report
 
 
 # ---------------------------------------------------------------------------
@@ -101,8 +104,8 @@ def make_session(verify_ssl: bool) -> requests.Session:
     return session
 
 
-def api_request(session: requests.Session, method: str, url: str, **kwargs):
-    """HTTP request with exponential-backoff retry on transient errors."""
+def _do_request(session: requests.Session, method: str, url: str, **kwargs) -> requests.Response:
+    """HTTP request with exponential-backoff retry on transient errors. Returns the raw Response."""
     last_exc = None
     for attempt in range(MAX_RETRIES + 1):
         if attempt > 0:
@@ -111,9 +114,9 @@ def api_request(session: requests.Session, method: str, url: str, **kwargs):
             time.sleep(wait)
         try:
             logging.debug(f"{method.upper()} {url}  params={kwargs.get('params')}")
-            resp = session.request(method, url, timeout=60, **kwargs)
+            resp = session.request(method, url, timeout=120, **kwargs)
             resp.raise_for_status()
-            return resp.json()
+            return resp
         except requests.exceptions.HTTPError as exc:
             status = exc.response.status_code if exc.response is not None else "?"
             logging.warning(f"HTTP {status} on {method.upper()} {url}: {exc}")
@@ -124,6 +127,11 @@ def api_request(session: requests.Session, method: str, url: str, **kwargs):
             logging.warning(f"Network error on {method.upper()} {url}: {exc}")
             last_exc = exc
     raise last_exc
+
+
+def api_request(session: requests.Session, method: str, url: str, **kwargs):
+    """HTTP request that returns parsed JSON."""
+    return _do_request(session, method, url, **kwargs).json()
 
 
 # ---------------------------------------------------------------------------
@@ -238,117 +246,102 @@ def get_last_scan_id(session: requests.Session, base_url: str, project_id: int) 
     return int(scan_id) if scan_id is not None else None
 
 
-def get_scan_results(session: requests.Session, base_url: str, scan_id: int) -> list:
-    """Retrieve all results for a scan using offset/limit pagination."""
-    url = f"{base_url}{RESULTS_ENDPOINT}"
-    all_results = []
-    offset = 0
+# ---------------------------------------------------------------------------
+# Report generation
+# ---------------------------------------------------------------------------
 
-    while True:
-        params = {"scanId": scan_id, "offset": offset, "limit": PAGE_SIZE}
-        data = api_request(session, "GET", url, params=params)
+def order_scan_report(session: requests.Session, base_url: str, scan_id: int) -> int:
+    """Request a CSV report for the given scan. Returns the reportId."""
+    url = f"{base_url}{REPORTS_ENDPOINT}"
+    data = api_request(session, "POST", url, json={"reportType": "CSV", "scanId": scan_id})
+    return int(data["reportId"])
 
-        if isinstance(data, list):
-            page = data
-        elif isinstance(data, dict):
-            page = data.get("results") or data.get("Results") or []
-        else:
-            break
 
-        all_results.extend(page)
-        logging.debug(f"    Page offset={offset}: {len(page)} results (total so far: {len(all_results)})")
+def wait_for_report(session: requests.Session, base_url: str, report_id: int) -> bool:
+    """
+    Poll the report status every REPORT_POLL_INTERVAL seconds.
+    Returns True when status is "Created", False on timeout.
+    """
+    url = f"{base_url}{REPORTS_ENDPOINT}/{report_id}/status"
+    deadline = time.monotonic() + REPORT_TIMEOUT
 
-        if len(page) < PAGE_SIZE:
-            break
-        offset += PAGE_SIZE
+    while time.monotonic() < deadline:
+        data = api_request(session, "GET", url)
+        status = data.get("status", {})
+        # API returns {"id": 2, "value": "Created"} or similar
+        status_val = status.get("value") if isinstance(status, dict) else str(status)
+        logging.debug(f"    Report {report_id} status: {status_val}")
+        if status_val and status_val.lower() == "created":
+            return True
+        time.sleep(REPORT_POLL_INTERVAL)
 
-    return all_results
+    return False
+
+
+def download_report_csv(
+    session: requests.Session,
+    base_url: str,
+    report_id: int,
+    output_dir: Path,
+    project_name: str,
+    scan_id: int,
+) -> str:
+    """
+    Download the report CSV and save it to output_dir/reports/.
+    Returns the raw CSV text for in-memory parsing.
+    """
+    url = f"{base_url}{REPORTS_ENDPOINT}/{report_id}"
+    resp = _do_request(session, "GET", url)
+
+    safe_name = re.sub(r'[\\/:*?"<>|]', "_", project_name).strip("_") or f"project_{scan_id}"
+    reports_dir = output_dir / "reports"
+    reports_dir.mkdir(exist_ok=True)
+    file_path = reports_dir / f"{safe_name}_scan{scan_id}.csv"
+    file_path.write_bytes(resp.content)
+    logging.debug(f"    Report saved: {file_path}")
+
+    return resp.text
 
 
 # ---------------------------------------------------------------------------
-# Row construction
+# Row construction from report CSV
 # ---------------------------------------------------------------------------
 
-def _str(val) -> str:
-    return str(val).strip() if val is not None else ""
+def _build_column_map(report_headers: list[str]) -> dict[str, str]:
+    """
+    Map each OUTPUT_COLUMN (non-meta) to the matching header in the report CSV.
+    Matching is case-insensitive and strips whitespace.
+    Returns {output_col: report_header} for columns that were found.
+    """
+    normalised = {h.strip().lower(): h for h in report_headers}
+    mapping: dict[str, str] = {}
+    for col in OUTPUT_COLUMNS:
+        if col in PROJECT_META_COLUMNS:
+            continue
+        key = col.strip().lower()
+        if key in normalised:
+            mapping[col] = normalised[key]
+    return mapping
 
 
-def extract_nodes(nodes: list) -> tuple:
-    """Return (src_file, src_line, src_col, src_nodeid, src_name, dst_*) from nodes list."""
-    empty = ("", "", "", "", "")
-    if not nodes:
-        return empty + empty
-    src = nodes[0]
-    dst = nodes[-1]
-    return (
-        _str(src.get("fileName")), _str(src.get("line")), _str(src.get("column")),
-        _str(src.get("nodeId")), _str(src.get("name")),
-        _str(dst.get("fileName")), _str(dst.get("line")), _str(dst.get("column")),
-        _str(dst.get("nodeId")), _str(dst.get("name")),
-    )
+def parse_report_rows(csv_text: str, project_meta: dict) -> list[dict]:
+    """
+    Parse the downloaded report CSV and merge each row with project_meta.
+    Returns a list of dicts keyed by OUTPUT_COLUMNS.
+    """
+    reader = csv.DictReader(io.StringIO(csv_text))
+    headers = reader.fieldnames or []
+    col_map = _build_column_map(list(headers))
 
-
-def extract_compliance(query: dict) -> dict:
-    result = {col: "" for col in COMPLIANCE_COLUMNS}
-    if not query:
-        return result
-
-    raw = (
-        query.get("categories")
-        or query.get("compliance")
-        or query.get("tags")
-        or query.get("complianceFrameworks")
-    )
-
-    if isinstance(raw, dict):
-        for col in COMPLIANCE_COLUMNS:
-            val = raw.get(col, "")
-            result[col] = _str(val)
-    elif isinstance(raw, list):
-        for item in raw:
-            name = _str(item.get("name") or item.get("complianceName", ""))
-            if name in result:
-                result[name] = _str(item.get("value") or item.get("data", ""))
-    else:
-        for col in COMPLIANCE_COLUMNS:
-            val = query.get(col)
-            if val is not None:
-                result[col] = _str(val)
-
-    return result
-
-
-def build_row(project_meta: dict, result: dict) -> dict:
-    row = {col: "" for col in OUTPUT_COLUMNS}
-
-    for col in PROJECT_META_COLUMNS:
-        row[col] = project_meta.get(col, "")
-
-    query = result.get("query") or {}
-    row["Query"] = _str(query.get("name") or result.get("queryName") or result.get("query"))
-    row["QueryPath"] = _str(
-        query.get("queryPath") or query.get("group") or result.get("queryPath") or result.get("group")
-    )
-    is_custom = query.get("isCustom") if query else result.get("isCustom")
-    row["Custom"] = _str(is_custom) if is_custom is not None else ""
-
-    row.update(extract_compliance(query if query else result))
-
-    nodes = result.get("nodes") or result.get("Nodes") or []
-    (
-        row["SrcFileName"], row["Line"], row["Column"], row["NodeId"], row["Name"],
-        row["DestFileName"], row["DestLine"], row["DestColumn"], row["DestNodeId"], row["DestName"],
-    ) = extract_nodes(nodes)
-
-    row["Result State"]    = _str(result.get("state")      or result.get("resultState"))
-    row["Result Severity"] = _str(result.get("severity")   or result.get("resultSeverity"))
-    row["Assigned To"]     = _str(result.get("assignedTo") or result.get("assignedUser"))
-    row["Comment"]         = _str(result.get("comment"))
-    row["Link"]            = _str(result.get("deepLink")   or result.get("link"))
-    row["Result Status"]   = _str(result.get("status")     or result.get("resultStatus"))
-    row["Detection Date"]  = _str(result.get("detectionDate"))
-
-    return row
+    rows = []
+    for record in reader:
+        row = {col: "" for col in OUTPUT_COLUMNS}
+        for col in PROJECT_META_COLUMNS:
+            row[col] = project_meta.get(col, "")
+        for out_col, report_col in col_map.items():
+            row[out_col] = (record.get(report_col) or "").strip()
+        rows.append(row)
+    return rows
 
 
 # ---------------------------------------------------------------------------
@@ -360,6 +353,7 @@ def process_project(
     meta: dict,
     session: requests.Session,
     base_url: str,
+    output_dir: Path,
     prev_state: dict,
     incremental: bool,
     counter: list,      # [done, total] — mutable for progress display
@@ -399,8 +393,18 @@ def process_project(
                 logging.info(f"[{counter[0]}/{counter[1]}] {proj_name} — scan {scan_id} unchanged, skipping.")
             return [], coverage_row
 
-        results = get_scan_results(session, base_url, scan_id)
-        rows = [build_row(meta, r) for r in results]
+        # Step 1: order the report
+        logging.debug(f"    [{proj_name}] Ordering CSV report for scan {scan_id}…")
+        report_id = order_scan_report(session, base_url, scan_id)
+        logging.debug(f"    [{proj_name}] Report {report_id} accepted — polling status…")
+
+        # Step 2: wait for the report to be ready
+        if not wait_for_report(session, base_url, report_id):
+            raise TimeoutError(f"Report {report_id} did not reach 'Created' status within {REPORT_TIMEOUT}s")
+
+        # Step 3: download and parse
+        csv_text = download_report_csv(session, base_url, report_id, output_dir, proj_name, scan_id)
+        rows = parse_report_rows(csv_text, meta)
 
         coverage_row["Included In Extract"] = "Yes"
         with counter_lock:
@@ -488,7 +492,7 @@ def main() -> None:
             futures = {
                 pool.submit(
                     process_project,
-                    cx_id, meta, session, base_url,
+                    cx_id, meta, session, base_url, output_dir,
                     prev_state, args.incremental,
                     counter, counter_lock,
                 ): cx_id
